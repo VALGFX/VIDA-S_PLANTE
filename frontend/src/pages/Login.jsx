@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { useContext, useEffect, useState } from 'react'
-import { toast } from 'react-toastify'
+import { toast, ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 import { ShopContext } from '../context/ShopContext'
 
 const Login = () => {
@@ -10,28 +11,73 @@ const Login = () => {
 	const [name, setName] = useState('')
 	const [email, setEmail] = useState('')
 	const [password, setPassword] = useState('')
+	const [company, setCompany] = useState('')
+	const [verificationCode, setVerificationCode] = useState('')
+	const [codeSent, setCodeSent] = useState(false)
+	const [codeVerified, setCodeVerified] = useState(false)
 	const [loading, setLoading] = useState(false)
+
+	const sendCodeToEmail = async () => {
+		if (!email.includes('@')) return
+
+		try {
+			await axios.post(backendUrl + '/api/send-code', { email })
+			setCodeSent(true)
+			toast.success('Il codice di verifica è stato inviato via email!')
+		} catch (err) {
+			console.error(err)
+			toast.error("Errore nell'invio del codice")
+		}
+	}
+
+	const verifyEmailCode = async () => {
+		try {
+			const response = await axios.post(backendUrl + '/api/verify-code', {
+				email,
+				code: verificationCode,
+			})
+
+			if (response.data.message.includes('success')) {
+				setCodeVerified(true)
+				toast.success('Il codice è stato verificato con successo!')
+			} else {
+				setCodeVerified(false)
+				toast.error('Il codice è errato o scaduto')
+			}
+		} catch (err) {
+			console.error(err)
+			toast.error('Errore nella verifica del codice')
+		}
+	}
 
 	const onSubmitHandler = async event => {
 		event.preventDefault()
 		setLoading(true)
+
 		try {
 			if (currentState === 'Sign Up') {
+				if (!codeVerified) {
+					toast.warn('Devi prima verificare la tua email!')
+					setLoading(false)
+					return
+				}
+
 				const response = await axios.post(backendUrl + '/api/user/register', {
 					name,
 					email,
 					password,
+					company,
 				})
 
 				if (response.data.success) {
 					if (response.data.token) {
 						setToken(response.data.token)
 						localStorage.setItem('token', response.data.token)
-						toast.success('Registrazione completata con successo!')
+						toast.success('Registrazione completata!')
 						navigate('/')
 					} else {
 						toast.info(
-							"Registrazione riuscita. Attendere l'approvazione dell'amministrazione."
+							"Account creato. Attendi l'approvazione dell'amministratore."
 						)
 					}
 				} else {
@@ -50,9 +96,7 @@ const Login = () => {
 						toast.success('Accesso effettuato con successo!')
 						navigate('/')
 					} else {
-						toast.error(
-							"Il tuo account non è ancora stato approvato. Attendere l'approvazione dell'amministratore."
-						)
+						toast.error('Il tuo account non è ancora stato approvato.')
 					}
 				} else {
 					toast.error(response.data.message)
@@ -63,9 +107,10 @@ const Login = () => {
 			toast.error(
 				error.response?.data?.message ||
 					error.message ||
-					'Qualcosa è andato storto'
+					'Qualcosa è andato storto.'
 			)
 		}
+
 		setLoading(false)
 	}
 
@@ -75,140 +120,171 @@ const Login = () => {
 		}
 	}, [token])
 
+	const Spinner = () => (
+		<div className='w-5 h-5 border-4 border-white border-t-transparent rounded-full animate-spin' />
+	)
+
 	return (
 		<>
-			{/* Background + overlay */}
-			<div
-				className="fixed inset-0 bg-[url('/mountains.jpg')] bg-cover bg-center z-[-2]"
-				aria-hidden='true'
-			/>
-			<div
-				className='fixed inset-0 bg-[rgba(35,36,58,0.85)] backdrop-blur-sm z-[-1]'
-				aria-hidden='true'
-			/>
+			{/* Background image with dark overlay and subtle blur */}
+			<div className="fixed inset-0 bg-[url('/mountains.jpg')] bg-cover bg-center z-[-2]" />
+			<div className='fixed inset-0 bg-black bg-opacity-75 backdrop-blur-sm z-[-1]' />
 
 			<div className='min-h-screen flex items-center justify-center px-6 font-sans text-white'>
-				<div className='relative max-w-lg w-full bg-[#1E1E1E] rounded-3xl shadow-2xl flex flex-col p-10 cursor-default'>
-					<div className='mb-6'>
-						<p className='text-gray-400 uppercase tracking-widest text-xs font-semibold mb-1'>
-							Benvenuto su
+				<div
+					className='relative max-w-md w-full bg-[#121212cc] rounded-xl shadow-lg
+					p-8
+					backdrop-blur-md
+					border border-gray-700'
+				>
+					<div className='mb-6 text-center'>
+						<p className='uppercase tracking-widest text-xs font-semibold mb-1 text-gray-400'>
+							VIDA-S Plante
 						</p>
-						<h1 className='text-4xl font-extrabold mb-3 select-none'>
-							The <span className='text-green-500/70'>VIDA-S Plante</span>{' '}
+						<h1 className='text-3xl font-bold mb-2'>
 							{currentState === 'Login' ? 'Accesso' : 'Registrazione'}
 						</h1>
-						<p className='text-gray-400 mb-8'>
+						<p className='text-gray-400 text-sm'>
 							{currentState === 'Login'
-								? 'Accedi al tuo account per continuare.'
-								: 'Crea un nuovo account per iniziare.'}
+								? 'Accedi al tuo account.'
+								: 'Crea un account per continuare.'}
 						</p>
 					</div>
 
 					<form
-						className='flex flex-col gap-5'
+						className='flex flex-col gap-4'
 						onSubmit={onSubmitHandler}
 						noValidate
 					>
 						{currentState === 'Sign Up' && (
-							<div className='relative'>
+							<>
 								<input
 									type='text'
-									placeholder='Nome'
-									className='w-full bg-[rgba(46,50,77,0.85)] text-white rounded-xl py-2.5 pl-10 pr-4 border border-transparent focus:border-green-500 focus:bg-[rgba(57,68,99,0.9)] transition'
+									placeholder='Nome completo'
+									className='bg-[#222] rounded-md py-3 px-4 placeholder-gray-500 text-white
+									focus:outline-none focus:ring-2 focus:ring-green-600'
 									value={name}
 									onChange={e => setName(e.target.value)}
 									required
 									disabled={loading}
 								/>
-								<svg
-									className='absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-green-500 pointer-events-none'
-									xmlns='http://www.w3.org/2000/svg'
-									fill='currentColor'
-									viewBox='0 0 24 24'
+								<input
+									type='text'
+									placeholder='Azienda'
+									className='bg-[#222] rounded-md py-3 px-4 placeholder-gray-500 text-white
+									focus:outline-none focus:ring-2 focus:ring-green-600'
+									value={company}
+									onChange={e => setCompany(e.target.value)}
+									required
+									disabled={loading}
+								/>
+							</>
+						)}
+
+						<input
+							type='email'
+							placeholder='Email'
+							className='bg-[#222] rounded-md py-3 px-4 placeholder-gray-500 text-white
+							focus:outline-none focus:ring-2 focus:ring-green-600'
+							value={email}
+							onChange={e => setEmail(e.target.value)}
+							onBlur={sendCodeToEmail}
+							required
+							disabled={loading}
+						/>
+
+						{currentState === 'Sign Up' && (
+							<div className='relative'>
+								<input
+									type='text'
+									placeholder='Codice di verifica email'
+									className='bg-[#222] rounded-md py-3 px-4 placeholder-gray-500 text-white pr-28
+									focus:outline-none focus:ring-2 focus:ring-green-600'
+									value={verificationCode}
+									onChange={e => setVerificationCode(e.target.value)}
+									disabled={!codeSent || loading}
+								/>
+								<button
+									type='button'
+									onClick={verifyEmailCode}
+									className='absolute right-2 top-1/2 -translate-y-1/2 bg-green-600 hover:bg-green-700
+									text-white text-xs rounded px-3 py-1 transition'
 								>
-									<path d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zM12 14c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z' />
-								</svg>
+									Verifica
+								</button>
 							</div>
 						)}
 
-						<div className='relative'>
-							<input
-								type='email'
-								placeholder='Email'
-								className='w-full bg-[rgba(46,50,77,0.85)] text-white rounded-xl py-2.5 pl-10 pr-4 border border-transparent focus:border-green-500 focus:bg-[rgba(57,68,99,0.9)] transition'
-								value={email}
-								onChange={e => setEmail(e.target.value)}
-								required
-								disabled={loading}
-							/>
-							<svg
-								className='absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-green-500 pointer-events-none'
-								xmlns='http://www.w3.org/2000/svg'
-								fill='currentColor'
-								viewBox='0 0 24 24'
-							>
-								<path d='M20 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2zm0 2v.01L12 13 4 6.01V6h16z' />
-							</svg>
-						</div>
+						<input
+							type='password'
+							placeholder='Password'
+							className='bg-[#222] rounded-md py-3 px-4 placeholder-gray-500 text-white
+							focus:outline-none focus:ring-2 focus:ring-green-600'
+							value={password}
+							onChange={e => setPassword(e.target.value)}
+							required
+							minLength={6}
+							disabled={loading}
+						/>
 
-						<div className='relative'>
-							<input
-								type='password'
-								placeholder='Password'
-								className='w-full bg-[rgba(46,50,77,0.85)] text-white rounded-xl py-2.5 pl-10 pr-4 border border-transparent focus:border-green-500 focus:bg-[rgba(57,68,99,0.9)] transition'
-								value={password}
-								onChange={e => setPassword(e.target.value)}
-								required
-								minLength={6}
-								disabled={loading}
-							/>
-							<svg
-								className='absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-green-500 pointer-events-none'
-								xmlns='http://www.w3.org/2000/svg'
-								fill='currentColor'
-								viewBox='0 0 24 24'
-							>
-								<path d='M12 17a2 2 0 002-2v-2a2 2 0 10-4 0v2a2 2 0 002 2zm6-6h-1V7a5 5 0 10-10 0v4H6a2 2 0 00-2 2v6a2 2 0 002 2h12a2 2 0 002-2v-6a2 2 0 00-2-2z' />
-							</svg>
-						</div>
-
-						<div className='flex justify-between text-sm -mt-2'>
-							<p className='cursor-pointer hover:underline'>
+						{/* Responsive container for links */}
+						<div className='flex flex-col sm:flex-row justify-between items-center gap-3 mt-[-8px] text-sm'>
+							<p className='cursor-pointer hover:underline hover:text-green-400 transition text-center sm:text-left w-full sm:w-auto'>
 								Hai dimenticato la password?
 							</p>
-							{currentState === 'Login' ? (
-								<p
-									onClick={() => setCurrentState('Sign Up')}
-									className='cursor-pointer hover:underline'
-								>
-									Crea un account
-								</p>
-							) : (
-								<p
-									onClick={() => setCurrentState('Login')}
-									className='cursor-pointer hover:underline'
-								>
-									Hai già un account? Accedi
-								</p>
-							)}
+							<p
+								onClick={() =>
+									setCurrentState(
+										currentState === 'Login' ? 'Sign Up' : 'Login'
+									)
+								}
+								className='cursor-pointer hover:underline hover:text-green-400 transition text-center sm:text-right w-full sm:w-auto'
+							>
+								{currentState === 'Login'
+									? 'Non hai un account? Registrati'
+									: 'Hai già un account? Accedi'}
+							</p>
 						</div>
 
 						<button
 							type='submit'
 							disabled={loading}
-							className='mt-6 bg-green-600 hover:bg-green-700 transition rounded-xl py-3 font-semibold text-white disabled:opacity-70 disabled:cursor-not-allowed'
+							className='mt-6 bg-green-600 hover:bg-green-700 rounded-md py-3 font-semibold text-white
+							disabled:opacity-70 disabled:cursor-not-allowed transition'
 						>
-							{loading
-								? currentState === 'Login'
-									? 'Accesso in corso...'
-									: 'Registrazione in corso...'
-								: currentState === 'Login'
-								? 'Accedi'
-								: 'Registrati'}
+							{loading ? (
+								<span className='flex items-center justify-center gap-2'>
+									<Spinner />
+									{currentState === 'Login'
+										? 'Accesso in corso...'
+										: 'Registrazione in corso...'}
+								</span>
+							) : currentState === 'Login' ? (
+								'Accesso'
+							) : (
+								'Registrazione'
+							)}
 						</button>
+
+						{currentState === 'Sign Up' && !codeVerified && (
+							<p className='text-xs text-gray-400 text-center mt-4'>
+								Il codice è stato inviato. Controlla la tua casella di posta.
+								Dopo la creazione, il tuo account sarà approvato manualmente.
+								Puoi controllare lo stato{' '}
+								<a
+									href='/verificare-account'
+									className='text-green-400 underline'
+								>
+									qui
+								</a>
+								.
+							</p>
+						)}
 					</form>
 				</div>
 			</div>
+
+			<ToastContainer />
 		</>
 	)
 }
