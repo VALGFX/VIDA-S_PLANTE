@@ -1,7 +1,9 @@
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
+import nodemailer from 'nodemailer'
 import validator from 'validator'
 import userModel from '../models/userModel.js'
+import VerificationCode from '../models/verificationCodeModel.js'
 
 // Creează token JWT
 const createToken = id => {
@@ -43,7 +45,7 @@ const loginUser = async (req, res) => {
 // Înregistrare utilizator
 const registerUser = async (req, res) => {
 	try {
-		const { name, email, password } = req.body
+		const { name, email, password, company } = req.body
 
 		const exists = await userModel.findOne({ email })
 		if (exists) {
@@ -67,10 +69,11 @@ const registerUser = async (req, res) => {
 			name,
 			email,
 			password: hashedPassword,
+			company,
 			isApproved: false,
 		})
 
-		const user = await newUser.save()
+		await newUser.save()
 
 		res.json({
 			success: true,
@@ -104,18 +107,78 @@ const adminLogin = async (req, res) => {
 	}
 }
 
-// Obține profilul utilizatorului (fără parola)
-const getUserProfile = async (req, res) => {
+// Trimite codul de verificare pe email
+const sendVerificationCode = async (req, res) => {
 	try {
-		const userId = req.user.id
-		const user = await userModel.findById(userId).select('-password')
-		if (!user) {
-			return res.status(404).json({ success: false, message: 'User not found' })
+		const { email } = req.body
+		if (!email) return res.status(400).json({ message: 'Lipsește email' })
+
+		const code = Math.floor(100000 + Math.random() * 900000).toString()
+		const expireAt = Date.now() + 10 * 60 * 1000 // 10 minute
+
+		await VerificationCode.findOneAndUpdate(
+			{ email },
+			{ code, expireAt },
+			{ upsert: true, new: true }
+		)
+
+		const transporter = nodemailer.createTransport({
+			service: 'gmail',
+			auth: {
+				user: process.env.EMAIL_USER,
+				pass: process.env.EMAIL_PASS,
+			},
+		})
+
+		const mailOptions = {
+			from: process.env.EMAIL_USER,
+			to: email,
+			subject: 'Codul tău de verificare VIDA-S Plante',
+			text: `Codul tău de verificare este: ${code}. Este valabil 10 minute.`,
 		}
-		res.json({ success: true, user })
+
+		await transporter.sendMail(mailOptions)
+
+		res.json({ message: 'Cod trimis pe email' })
 	} catch (error) {
-		res.status(500).json({ success: false, message: error.message })
+		console.error('Eroare la trimiterea codului:', error)
+		res.status(500).json({ message: 'Eroare la trimiterea codului' })
 	}
 }
 
-export { adminLogin, getUserProfile, loginUser, registerUser }
+// Verifică codul trimis
+const verifyCode = async (req, res) => {
+	try {
+		let { email, code } = req.body
+
+		if (!email || !code) {
+			return res.status(400).json({ message: 'Lipsește email sau cod' })
+		}
+
+		code = code.trim()
+
+		const record = await VerificationCode.findOne({ email })
+
+		if (!record) {
+			return res.status(400).json({ message: 'Codul nu există sau a expirat' })
+		}
+
+		if (record.code !== code) {
+			return res.status(400).json({ message: 'Codul este greșit' })
+		}
+
+		if (Date.now() > record.expireAt) {
+			await VerificationCode.deleteOne({ email })
+			return res.status(400).json({ message: 'Codul a expirat' })
+		}
+
+		await VerificationCode.deleteOne({ email })
+
+		res.json({ message: 'Verificare cod success' })
+	} catch (error) {
+		console.error('Eroare la verificarea codului:', error)
+		res.status(500).json({ message: 'Eroare la verificarea codului' })
+	}
+}
+
+export { adminLogin, loginUser, registerUser, sendVerificationCode, verifyCode }
