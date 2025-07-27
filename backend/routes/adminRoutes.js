@@ -4,29 +4,32 @@ import User from '../models/userModel.js'
 
 const router = express.Router()
 
-// Middleware simplu pentru verificare token admin (exemplu)
+// Middleware pentru verificare token + rol admin
 const verifyAdmin = (req, res, next) => {
 	try {
 		const authHeader = req.headers.authorization
-		if (!authHeader)
-			return res
-				.status(401)
-				.json({ success: false, message: 'No token provided' })
+		if (!authHeader) {
+			return res.status(401).json({ success: false, message: 'Token mancante' })
+		}
 
 		const token = authHeader.split(' ')[1]
 		const decoded = jwt.verify(token, process.env.JWT_SECRET)
 
-		// Aici poți face verificări suplimentare dacă token-ul are rol admin
-		// De exemplu, dacă token conține un câmp 'role' === 'admin'
-		// Dacă nu ai, poți face o comparație simplă cu un email sau ceva
+		// Verificăm dacă tokenul aparține contului de admin
+		if (decoded.email !== process.env.ADMIN_EMAIL) {
+			return res.status(403).json({ success: false, message: 'Accesso negato' })
+		}
 
+		// Atașăm datele în `req.admin` dacă e nevoie
+		req.admin = decoded
 		next()
 	} catch (error) {
-		return res.status(401).json({ success: false, message: 'Invalid token' })
+		console.error('Admin auth error:', error)
+		return res.status(401).json({ success: false, message: 'Token non valido' })
 	}
 }
 
-// 1. GET utilizatori în așteptare
+// 1. Obține utilizatori neaprobati
 router.get('/waiting-users', verifyAdmin, async (req, res) => {
 	try {
 		const users = await User.find({ isApproved: false }).select('name email')
@@ -36,40 +39,48 @@ router.get('/waiting-users', verifyAdmin, async (req, res) => {
 	}
 })
 
-// 2. POST aprobare utilizator
+// 2. Aprobă un utilizator
 router.post('/approve-user', verifyAdmin, async (req, res) => {
 	try {
 		const { userId } = req.body
-		if (!userId)
+		if (!userId) {
 			return res
 				.status(400)
-				.json({ success: false, message: 'userId is required' })
+				.json({ success: false, message: 'ID utilizator lipsă' })
+		}
 
 		const user = await User.findById(userId)
-		if (!user)
-			return res.status(404).json({ success: false, message: 'User not found' })
+		if (!user) {
+			return res
+				.status(404)
+				.json({ success: false, message: 'Utilizator inexistent' })
+		}
 
 		user.isApproved = true
 		await user.save()
 
-		res.json({ success: true, message: 'User approved successfully' })
+		res.json({ success: true, message: 'Utilizator aprobat cu succes' })
 	} catch (error) {
 		res.status(500).json({ success: false, message: error.message })
 	}
 })
 
-// 3. DELETE ștergere utilizator
+// 3. Șterge un utilizator
 router.delete('/delete-user/:id', verifyAdmin, async (req, res) => {
 	try {
 		const userId = req.params.id
 		const user = await User.findByIdAndDelete(userId)
-		if (!user)
-			return res.status(404).json({ success: false, message: 'User not found' })
+		if (!user) {
+			return res
+				.status(404)
+				.json({ success: false, message: 'Utilizator inexistent' })
+		}
 
-		res.json({ success: true, message: 'User deleted successfully' })
+		res.json({ success: true, message: 'Utilizator șters cu succes' })
 	} catch (error) {
 		res.status(500).json({ success: false, message: error.message })
 	}
 })
+console.log('JWT_SECRET folosit:', process.env.JWT_SECRET)
 
 export default router
